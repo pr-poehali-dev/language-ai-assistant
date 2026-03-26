@@ -1,3 +1,5 @@
+export type VoiceGender = "female" | "male";
+
 export type Teacher = {
   id: number;
   name: string;
@@ -12,6 +14,8 @@ export type Teacher = {
   rating: number;
   students: string;
   praise: string[];
+  voiceLang: string;
+  voiceGender: VoiceGender;
 };
 
 export type Message = { role: "ai" | "user"; text: string; praise?: boolean };
@@ -32,6 +36,8 @@ export const teachers: Teacher[] = [
     level: "A1–C1",
     rating: 4.9,
     students: "12K",
+    voiceLang: "en",
+    voiceGender: "female",
     praise: [
       "Великолепно! Я слышу, как твой акцент становится лучше с каждым словом! 🌟",
       "Потрясающий прогресс! Продолжай в том же духе, ты просто звезда! ⭐",
@@ -53,6 +59,8 @@ export const teachers: Teacher[] = [
     level: "A1–B2",
     rating: 4.8,
     students: "8K",
+    voiceLang: "es",
+    voiceGender: "male",
     praise: [
       "¡Increíble! Невероятно! Твоё произношение просто магия! 🔥",
       "¡Muy bien! Ты учишься быстрее, чем я ожидал! Продолжай! 🌺",
@@ -72,6 +80,8 @@ export const teachers: Teacher[] = [
     level: "A1–B1",
     rating: 5.0,
     students: "6K",
+    voiceLang: "ja",
+    voiceGender: "female",
     praise: [
       "素晴らしい！ Субарасии! Восхитительно! Ты настоящий самурай учёбы! ⚔️",
       "とても上手！ Очень хорошо! Твой японский звучит так натурально! 🌸",
@@ -91,6 +101,8 @@ export const teachers: Teacher[] = [
     level: "A2–C1",
     rating: 4.7,
     students: "5K",
+    voiceLang: "fr",
+    voiceGender: "male",
     praise: [
       "Magnifique! Твой французский звучит как поэзия! C'est parfait! 🥐",
       "Bravo! Париж ждёт тебя — ты уже говоришь как парижанин! 🗼",

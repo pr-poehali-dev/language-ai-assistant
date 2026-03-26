@@ -1,5 +1,7 @@
+import { useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import { Teacher, Message } from "./teachers.data";
+import { useSpeech } from "./useSpeech";
 
 interface TeacherCallScreenProps {
   teacher: Teacher;
@@ -35,6 +37,34 @@ export default function TeacherCallScreen({
   onToggleMute,
   onToggleSpeaker,
 }: TeacherCallScreenProps) {
+  const { speak, stop } = useSpeech();
+
+  // Озвучиваем каждое новое сообщение от ИИ
+  useEffect(() => {
+    if (!isSpeaker) return;
+    const last = messages[messages.length - 1];
+    if (last?.role === "ai") {
+      speak(last.text, teacher.voiceLang, teacher.voiceGender);
+    }
+  }, [messages, isSpeaker, speak, teacher.voiceLang, teacher.voiceGender]);
+
+  // Озвучиваем похвалу
+  useEffect(() => {
+    if (showPraise && praiseText && isSpeaker) {
+      setTimeout(() => speak(praiseText, teacher.voiceLang, teacher.voiceGender), 300);
+    }
+  }, [showPraise, praiseText, isSpeaker, speak, teacher.voiceLang, teacher.voiceGender]);
+
+  // Останавливаем речь при завершении звонка
+  useEffect(() => {
+    if (callState === "ended") stop();
+  }, [callState, stop]);
+
+  // Останавливаем при mute
+  useEffect(() => {
+    if (isMuted) stop();
+  }, [isMuted, stop]);
+
   return (
     <div className="min-h-screen bg-mesh flex flex-col">
       <div className="flex-1 flex flex-col max-w-lg mx-auto w-full px-4 py-6">

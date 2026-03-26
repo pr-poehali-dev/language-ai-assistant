@@ -1,6 +1,7 @@
 import { useRef, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import { Teacher, Message } from "./teachers.data";
+import { useSpeech } from "./useSpeech";
 
 interface TeacherChatScreenProps {
   teacher: Teacher;
@@ -24,10 +25,19 @@ export default function TeacherChatScreen({
   onSendMessage,
 }: TeacherChatScreenProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { speak } = useSpeech();
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages, isTyping]);
+
+  // Озвучиваем каждое новое сообщение от ИИ
+  useEffect(() => {
+    const last = chatMessages[chatMessages.length - 1];
+    if (last?.role === "ai" && chatMessages.length > 1) {
+      speak(last.text, teacher.voiceLang, teacher.voiceGender);
+    }
+  }, [chatMessages, speak, teacher.voiceLang, teacher.voiceGender]);
 
   return (
     <div className="min-h-screen bg-mesh flex flex-col">
@@ -63,9 +73,13 @@ export default function TeacherChatScreen({
               className={`animate-fade-in flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               style={{ animationDelay: `${i * 0.05}s` }}>
               {msg.role === "ai" && (
-                <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${teacher.color} flex items-center justify-center mr-2 flex-shrink-0 text-sm self-end`}>
+                <button
+                  onClick={() => speak(msg.text, teacher.voiceLang, teacher.voiceGender)}
+                  className={`w-8 h-8 rounded-full bg-gradient-to-br ${teacher.color} flex items-center justify-center mr-2 flex-shrink-0 text-sm self-end hover:opacity-80 transition-opacity`}
+                  title="Прослушать снова"
+                >
                   {teacher.avatar}
-                </div>
+                </button>
               )}
               <div className={`max-w-[78%] rounded-2xl px-4 py-3 ${
                 msg.role === "user"
