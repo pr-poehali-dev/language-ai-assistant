@@ -1,49 +1,132 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Icon from "@/components/ui/icon";
 
+const API_URL = "https://functions.poehali.dev/796aca88-7e76-4ddd-abcc-8ed773198431";
+
 type MediaTab = "image" | "video";
+
+type GalleryItem = {
+  id: number;
+  type: MediaTab;
+  prompt: string;
+  url?: string;
+  emoji?: string;
+};
 
 const examplePrompts = [
   { text: "Утренний Токио в дожде, неоновые вывески", type: "image" as MediaTab },
   { text: "Кафе в Париже, двое за беседой", type: "image" as MediaTab },
-  { text: "Урок испанского на пляже", type: "video" as MediaTab },
-  { text: "Закат над горами Исландии", type: "image" as MediaTab },
-  { text: "Диалог в немецком супермаркете", type: "video" as MediaTab },
+  { text: "Закат над горами Исландии, северное сияние", type: "image" as MediaTab },
   { text: "Итальянская пиццерия, шумная атмосфера", type: "image" as MediaTab },
+  { text: "Урок испанского на пляже", type: "video" as MediaTab },
+  { text: "Диалог в немецком супермаркете", type: "video" as MediaTab },
 ];
 
-const gallery = [
-  { id: 1, type: "image" as MediaTab, prompt: "Пляж в Испании, золотой закат", emoji: "🌅" },
-  { id: 2, type: "video" as MediaTab, prompt: "Диалог: В кафе по-французски", emoji: "🎬" },
-  { id: 3, type: "image" as MediaTab, prompt: "Улицы Токио, сакура", emoji: "🌸" },
-  { id: 4, type: "image" as MediaTab, prompt: "Рынок в Марокко, яркие краски", emoji: "🏪" },
+const GENERATION_STEPS = [
+  "Анализирую описание...",
+  "Создаю композицию...",
+  "Прорисовываю детали...",
+  "Финальная обработка...",
 ];
 
 export default function Media() {
   const [activeTab, setActiveTab] = useState<MediaTab>("image");
   const [prompt, setPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generated, setGenerated] = useState(false);
+  const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
+  const [generatedPrompt, setGeneratedPrompt] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
+  const [stepIndex, setStepIndex] = useState(0);
+  const [gallery, setGallery] = useState<GalleryItem[]>([
+    { id: 1, type: "image", prompt: "Пляж в Испании, золотой закат", emoji: "🌅" },
+    { id: 2, type: "video", prompt: "Диалог: В кафе по-французски", emoji: "🎬" },
+    { id: 3, type: "image", prompt: "Улицы Токио, сакура", emoji: "🌸" },
+    { id: 4, type: "image", prompt: "Рынок в Марокко, яркие краски", emoji: "🏪" },
+  ]);
+  const stepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
-  const handleGenerate = () => {
-    if (!prompt.trim()) return;
+  const startStepAnimation = () => {
+    setStepIndex(0);
+    let i = 0;
+    stepTimerRef.current = setInterval(() => {
+      i += 1;
+      if (i < GENERATION_STEPS.length) setStepIndex(i);
+      else {
+        if (stepTimerRef.current) clearInterval(stepTimerRef.current);
+      }
+    }, 1100);
+  };
+
+  const stopStepAnimation = () => {
+    if (stepTimerRef.current) clearInterval(stepTimerRef.current);
+  };
+
+  const handleGenerate = async () => {
+    if (!prompt.trim() || isGenerating) return;
     setIsGenerating(true);
-    setGenerated(false);
-    setTimeout(() => {
+    setGeneratedUrl(null);
+    setError(null);
+    startStepAnimation();
+
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: prompt.trim() }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error ?? "Ошибка генерации");
+
+      setGeneratedUrl(data.url);
+      setGeneratedPrompt(prompt.trim());
+      setGallery(prev => [
+        { id: Date.now(), type: "image", prompt: prompt.trim(), url: data.url },
+        ...prev.slice(0, 5),
+      ]);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Что-то пошло не так");
+    } finally {
+      stopStepAnimation();
       setIsGenerating(false);
-      setGenerated(true);
-    }, 2500);
+    }
   };
 
   const handleVoice = () => {
-    setIsListening(v => !v);
-    if (!isListening) {
-      setTimeout(() => {
-        setPrompt("Закат над горами Исландии, северное сияние");
-        setIsListening(false);
-      }, 2000);
+    const SpeechRecognitionAPI =
+      (window as Window & { SpeechRecognition?: typeof SpeechRecognition; webkitSpeechRecognition?: typeof SpeechRecognition }).SpeechRecognition ??
+      (window as Window & { SpeechRecognition?: typeof SpeechRecognition; webkitSpeechRecognition?: typeof SpeechRecognition }).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionAPI) {
+      setPrompt("Закат над горами Исландии, северное сияние");
+      return;
     }
+
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognitionAPI();
+    recognitionRef.current = recognition;
+    recognition.lang = "ru-RU";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (e: SpeechRecognitionEvent) => {
+      const text = e.results[0][0].transcript;
+      setPrompt(text);
+      setIsListening(false);
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+
+    recognition.start();
+    setIsListening(true);
   };
 
   return (
@@ -53,7 +136,7 @@ export default function Media() {
         <div className="animate-fade-in">
           <h1 className="font-display font-bold text-white text-2xl mb-1">ИИ Медиастудия</h1>
           <p className="text-muted-foreground font-body text-sm">
-            Генерируй изображения и видео по тексту или голосу
+            Генерируй изображения по тексту или голосу — реально, за 5 секунд
           </p>
         </div>
 
@@ -62,7 +145,7 @@ export default function Media() {
           {(["image", "video"] as MediaTab[]).map(tab => (
             <button
               key={tab}
-              onClick={() => { setActiveTab(tab); setGenerated(false); }}
+              onClick={() => { setActiveTab(tab); setGeneratedUrl(null); setError(null); }}
               className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-body text-sm font-medium transition-all duration-300 ${
                 activeTab === tab
                   ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg"
@@ -78,17 +161,14 @@ export default function Media() {
         {/* Prompt input */}
         <div className="animate-fade-in space-y-3" style={{ animationDelay: "0.15s" }}>
           <div className="glass-strong rounded-2xl p-4">
-            <div className="flex items-start gap-3">
-              <div className="flex-1">
-                <textarea
-                  value={prompt}
-                  onChange={e => setPrompt(e.target.value)}
-                  placeholder={`Опиши ${activeTab === "image" ? "изображение" : "видео"}, которое хочешь создать...`}
-                  rows={3}
-                  className="w-full bg-transparent text-white font-body text-sm outline-none placeholder:text-muted-foreground resize-none"
-                />
-              </div>
-            </div>
+            <textarea
+              value={prompt}
+              onChange={e => setPrompt(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleGenerate(); } }}
+              placeholder={`Опиши ${activeTab === "image" ? "изображение" : "видео"}, которое хочешь создать...`}
+              rows={3}
+              className="w-full bg-transparent text-white font-body text-sm outline-none placeholder:text-muted-foreground resize-none"
+            />
             <div className="flex items-center gap-2 mt-3 pt-3 border-t border-white/10">
               <button
                 onClick={handleVoice}
@@ -141,60 +221,123 @@ export default function Media() {
           </div>
         </div>
 
-        {/* Generation result */}
+        {/* Generating state */}
         {isGenerating && (
           <div className="animate-fade-in glass-strong rounded-3xl p-8 text-center">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-purple-500/30 to-pink-500/30 flex items-center justify-center">
-              <div className="w-8 h-8 border-2 border-purple-400/40 border-t-purple-400 rounded-full animate-spin" />
+            <div className="relative w-20 h-20 mx-auto mb-5">
+              <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-purple-500/30 to-pink-500/30 animate-pulse" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-10 h-10 border-2 border-purple-400/30 border-t-purple-400 rounded-full animate-spin" />
+              </div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Icon name="Sparkles" size={18} className="text-purple-400/60" />
+              </div>
             </div>
-            <p className="font-display font-semibold text-white mb-1">
+
+            <p className="font-display font-semibold text-white text-base mb-1">
               {activeTab === "image" ? "Рисую картину" : "Создаю видео"}...
             </p>
-            <p className="text-sm text-muted-foreground font-body">ИИ обрабатывает твой запрос</p>
-            <div className="mt-4 flex gap-1 justify-center">
-              {[0, 1, 2, 3].map(i => (
-                <div key={i} className="w-2 h-2 rounded-full bg-purple-400/40"
-                  style={{ animation: `pulse-dot 1.2s ${i * 0.2}s infinite` }} />
-              ))}
+            <p className="text-sm text-neon-cyan font-body mb-4 transition-all duration-500">
+              {GENERATION_STEPS[stepIndex]}
+            </p>
+
+            {/* Progress bar */}
+            <div className="w-full max-w-xs mx-auto h-1.5 glass rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-purple-500 to-cyan-500 transition-all duration-1000"
+                style={{ width: `${((stepIndex + 1) / GENERATION_STEPS.length) * 100}%` }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground font-body mt-3">~5 секунд</p>
+          </div>
+        )}
+
+        {/* Error */}
+        {error && !isGenerating && (
+          <div className="animate-fade-in glass rounded-2xl p-4 border border-red-500/30">
+            <div className="flex items-center gap-3">
+              <Icon name="AlertCircle" size={18} className="text-red-400 flex-shrink-0" />
+              <div>
+                <p className="font-body text-sm text-white font-medium">Не удалось создать</p>
+                <p className="text-xs text-muted-foreground font-body mt-0.5">{error}</p>
+              </div>
+              <button onClick={() => setError(null)} className="ml-auto text-muted-foreground hover:text-white">
+                <Icon name="X" size={16} />
+              </button>
             </div>
           </div>
         )}
 
-        {generated && !isGenerating && (
+        {/* Generated image result */}
+        {generatedUrl && !isGenerating && (
           <div className="animate-scale-in glass-strong rounded-3xl overflow-hidden">
-            <div className={`relative ${activeTab === "image" ? "h-64 md:h-80" : "h-48"} bg-gradient-to-br from-purple-900/50 via-indigo-900/30 to-cyan-900/50 flex items-center justify-center`}>
-              <div className="text-center">
-                <div className="text-6xl mb-3">{activeTab === "image" ? "🖼️" : "🎬"}</div>
-                <p className="text-white/60 font-body text-sm">Сгенерированный {activeTab === "image" ? "контент" : "видеоролик"}</p>
-                <p className="text-white/40 font-body text-xs mt-1">"{prompt}"</p>
+            <div className="relative">
+              <img
+                src={generatedUrl}
+                alt={generatedPrompt}
+                className="w-full object-cover rounded-t-3xl"
+                style={{ maxHeight: "420px" }}
+              />
+              <div className="absolute top-3 right-3 flex gap-2">
+                <a
+                  href={generatedUrl}
+                  download="lingua-ai-image.jpg"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="glass rounded-xl p-2 text-white hover:bg-white/20 transition-colors"
+                >
+                  <Icon name="Download" size={18} />
+                </a>
+                <button
+                  onClick={() => navigator.clipboard.writeText(generatedUrl)}
+                  className="glass rounded-xl p-2 text-neon-cyan hover:bg-white/20 transition-colors"
+                >
+                  <Icon name="Copy" size={18} />
+                </button>
               </div>
-              <div className="absolute inset-0 shimmer" />
+              <div className="absolute bottom-3 left-3 right-16">
+                <div className="glass rounded-xl px-3 py-2 inline-block max-w-full">
+                  <p className="text-xs text-white font-body truncate">"{generatedPrompt}"</p>
+                </div>
+              </div>
             </div>
             <div className="p-4 flex items-center gap-3">
               <div className="flex-1">
-                <p className="font-body text-sm text-white font-medium truncate">{prompt}</p>
-                <p className="text-xs text-muted-foreground font-body">
-                  {activeTab === "image" ? "PNG · 1024×1024" : "MP4 · 10 сек · HD"} · только что
-                </p>
+                <p className="font-body text-sm text-white font-medium truncate">{generatedPrompt}</p>
+                <p className="text-xs text-muted-foreground font-body">JPEG · только что · FLUX Schnell</p>
               </div>
-              <button className="glass rounded-xl p-2 text-neon-cyan hover:bg-white/10 transition-colors">
-                <Icon name="Download" size={18} />
-              </button>
-              <button className="glass rounded-xl p-2 text-muted-foreground hover:text-white transition-colors">
-                <Icon name="Share2" size={18} />
-              </button>
+              <div className="flex items-center gap-1 text-emerald-400">
+                <Icon name="CheckCircle" size={14} />
+                <span className="text-xs font-body">Готово</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Video stub */}
+        {activeTab === "video" && !isGenerating && (
+          <div className="animate-fade-in glass rounded-2xl p-4 border border-amber-400/20">
+            <div className="flex items-center gap-3">
+              <Icon name="Info" size={16} className="text-amber-400 flex-shrink-0" />
+              <p className="text-xs text-muted-foreground font-body">
+                Генерация видео скоро будет доступна. Пока попробуй создать изображение!
+              </p>
             </div>
           </div>
         )}
 
         {/* Gallery */}
         <div className="animate-fade-in" style={{ animationDelay: "0.3s" }}>
-          <h2 className="font-display font-semibold text-white text-base mb-3">Ранее созданное</h2>
+          <h2 className="font-display font-semibold text-white text-base mb-3">Галерея</h2>
           <div className="grid grid-cols-2 gap-3">
             {gallery.map(item => (
               <div key={item.id} className="glass rounded-2xl overflow-hidden card-hover group">
-                <div className="h-28 bg-gradient-to-br from-purple-900/40 via-indigo-900/20 to-cyan-900/40 flex items-center justify-center relative">
-                  <span className="text-4xl">{item.emoji}</span>
+                <div className="h-32 bg-gradient-to-br from-purple-900/40 via-indigo-900/20 to-cyan-900/40 flex items-center justify-center relative overflow-hidden">
+                  {item.url ? (
+                    <img src={item.url} alt={item.prompt} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-4xl">{item.emoji}</span>
+                  )}
                   {item.type === "video" && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                       <div className="w-8 h-8 rounded-full glass flex items-center justify-center">
@@ -205,7 +348,9 @@ export default function Media() {
                 </div>
                 <div className="p-3">
                   <p className="text-xs font-body text-white truncate">{item.prompt}</p>
-                  <p className="text-xs text-muted-foreground font-body mt-0.5">{item.type === "image" ? "Изображение" : "Видео"}</p>
+                  <p className="text-xs text-muted-foreground font-body mt-0.5">
+                    {item.type === "image" ? "Изображение" : "Видео"}
+                  </p>
                 </div>
               </div>
             ))}
